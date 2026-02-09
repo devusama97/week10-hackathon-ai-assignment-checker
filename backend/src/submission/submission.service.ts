@@ -25,10 +25,21 @@ export class SubmissionService {
 
         for (const file of files) {
             try {
+                console.log(`[SubmissionService] Processing file: ${file.originalname}`);
+
                 // 1. Extract Text using v2 syntax for Buffer
-                const parser = new PDFParse({ data: file.buffer });
-                const pdfData = await parser.getText();
-                const text = pdfData.text;
+                console.log(`[SubmissionService] Parsing PDF...`);
+                // Check if pdf-parse is working as expected
+                let text = '';
+                try {
+                    const parser = new PDFParse({ data: file.buffer });
+                    const pdfData = await parser.getText();
+                    text = pdfData.text;
+                    console.log(`[SubmissionService] PDF Parsed. Text length: ${text.length}`);
+                } catch (pdfError) {
+                    console.error(`[SubmissionService] PDF Parse Error:`, pdfError);
+                    throw pdfError;
+                }
 
                 // 2. Initialize Submission in DB
                 const submission = new this.submissionModel({
@@ -39,14 +50,17 @@ export class SubmissionService {
                     status: 'processing',
                 });
                 await submission.save();
+                console.log(`[SubmissionService] Initial submission saved: ${submission._id}`);
 
                 // 3. Evaluate using Agents
+                console.log(`[SubmissionService] Calling AgentService...`);
                 const evaluation = await this.agentService.evaluateSubmission(
                     assignment.title,
                     assignment.instructions,
                     assignment.markingMode,
                     text
                 );
+                console.log(`[SubmissionService] AgentService returned:`, evaluation);
 
                 // Update with AI results
                 submission.score = evaluation.score || 0;
@@ -75,7 +89,9 @@ export class SubmissionService {
                 submission.status = 'completed';
                 await submission.save();
                 results.push(submission);
+                console.log(`[SubmissionService] Submission completed: ${submission._id}`);
             } catch (error) {
+                console.error(`[SubmissionService] Failed to process ${file.originalname}`, error);
                 this.logger.error(`Failed to process ${file.originalname}`, error);
             }
         }

@@ -1,6 +1,6 @@
 'use client';
 import React, { useState } from 'react';
-import { Container, Typography, TextField, Button, Box, Paper, Alert, Link as MuiLink } from '@mui/material';
+import { Container, Typography, TextField, Button, Box, Paper, Alert, Link as MuiLink, Snackbar } from '@mui/material';
 import PersonAddOutlinedIcon from '@mui/icons-material/PersonAddOutlined';
 import api from '@/lib/api';
 import { useRouter } from 'next/navigation';
@@ -11,6 +11,7 @@ export default function SignupPage() {
     const [formData, setFormData] = useState({ name: '', email: '', password: '' });
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [successToast, setSuccessToast] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -25,9 +26,11 @@ export default function SignupPage() {
 
         try {
             await api.post('/auth/signup', formData);
-            // User requested to navigate to login page after signup
-            alert('Signup successful! Please login.');
-            router.push('/login');
+            setSuccessToast(true);
+            // Wait a bit for the toast to be seen before redirecting
+            setTimeout(() => {
+                router.push('/login');
+            }, 2000);
         } catch (err: any) {
             setError(err.response?.data?.message || 'Signup failed. Please try again.');
         } finally {
@@ -103,6 +106,17 @@ export default function SignupPage() {
                     </Box>
                 </Paper>
             </Container>
+
+            <Snackbar
+                open={successToast}
+                autoHideDuration={4000}
+                onClose={() => setSuccessToast(false)}
+                anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+            >
+                <Alert severity="success" variant="filled" sx={{ width: '100%' }}>
+                    Signup successful! Redirecting to login...
+                </Alert>
+            </Snackbar>
         </Box>
     );
 }

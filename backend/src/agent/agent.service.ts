@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
-import { Agent, run, setDefaultOpenAIClient, setOpenAIAPI } from '@openai/agents';
 
 @Injectable()
 export class AgentService {
@@ -13,24 +12,6 @@ export class AgentService {
             apiKey: this.configService.get<string>('OPENROUTER_API_KEY'),
             baseURL: this.configService.get<string>('BASE_URL'),
         });
-
-        // Configure @openai/agents
-        setDefaultOpenAIClient(this.client as any);
-        setOpenAIAPI('chat_completions');
-    }
-
-    private extractContent(result: any): string {
-        const assistantMessages = result.output.filter(
-            (m: any) => m.type === 'message' && m.role === 'assistant'
-        );
-        const lastMessage = assistantMessages[assistantMessages.length - 1];
-        if (!lastMessage) return '';
-
-        return typeof lastMessage.content === 'string'
-            ? lastMessage.content
-            : Array.isArray(lastMessage.content)
-                ? lastMessage.content.map((c: any) => c.text || JSON.stringify(c)).join('')
-                : JSON.stringify(lastMessage.content);
     }
 
     async evaluateSubmission(
@@ -39,104 +20,75 @@ export class AgentService {
         markingMode: string,
         submissionText: string,
     ) {
-        const model = this.configService.get<string>('AI_MODEL');
+        const model = this.configService.get<string>('AI_MODEL') || 'google/gemini-2.0-flash-exp:free';
+        console.log(`[AgentService] Evaluating with model: ${model}`);
 
-        // 1. Extractor Agent: Identify student details
-        const extractor = new Agent({
-            name: 'Extractor',
-            instructions: `Extract Student Name and Roll Number from the provided text. 
-            Return ONLY the name and roll number in a clear format. If not found, use "Unknown".`,
-            model: model,
-        });
+        const prompt = `
+You are an expert academic evaluator. Your task is to evaluate a student's submission based on specific instructions.
 
-        // 2. Grader Agent: Evaluation logic
-        const grader = new Agent({
-            name: 'Grader',
-            instructions: `Evaluate the student submission based on these instructions: "${instructions}".
-            Assignment Title: "${assignmentTitle}"
-            Marking Mode: ${markingMode.toUpperCase()}.
-            - If STRICT: Be very critical. Penalize for word count, formatting, and relevance.
-            - If LOOSE: Be encouraging. Focus on the core message and effort.
-            Provide a clear evaluation and a score out of 100.`,
-            model: model,
-        });
+### Assignment Details:
+- **Title**: ${assignmentTitle}
+- **Instructions**: ${instructions}
+- **Marking Mode**: ${markingMode.toUpperCase()}
 
-        // 3. Reviewer Agent: Final JSON Generator
-        const reviewer = new Agent({
-            name: 'Reviewer',
-            instructions: `You are the final reviewer for an AI Assignment Checker.
-            You will receive extraction details and grader feedback.
-            Your task is to produce a FINAL JSON OBJECT ONLY.
-            
-            JSON FORMAT:
-            {
-                "studentName": "Extracted Name",
-                "rollNumber": "Extracted Roll",
-                "score": 85,
-                "remarks": "Summary of feedback"
-            }
-            
-            IMPORTANT: DO NOT add any other text. ONLY valid JSON.`,
-            model: model,
-        });
+### Markings Rules:
+- If **STRICT**: Be very critical. Penalize heavily for missing requirements, word count issues, and poor relevance.
+- If **LOOSE**: Be encouraging. Reward effort and core ideas even if the structure isn't perfect.
+
+### Student Submission Text:
+---
+${submissionText}
+---
+
+### Your Tasks:
+1. **Extract Identity**: Find the Student Name and Roll Number from the text.
+2. **Evaluate Content**: Assess how well the submission follows the instructions.
+3. **Assign Score**: Provide a numerical score from 0 to 100.
+4. **Provide Feedback**: Write helpful, concise remarks.
+
+### Output Format:
+Return ONLY a valid JSON object. Do not include any markdown formatting like \`\`\`json.
+{
+  "studentName": "Extracted Name (or 'Unknown')",
+  "rollNumber": "Extracted Roll (or 'Unknown')",
+  "score": number,
+  "remarks": "Your detailed feedback here"
+}
+`;
 
         try {
-            this.logger.log(`[AI] Starting sequential evaluation for: ${assignmentTitle}`);
+            console.log(`[AI] Sending request to ${model}...`);
+            const completion = await this.client.chat.completions.create({
+                model: model,
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.1,
+            });
 
-            // Step 1: Extract Name & Roll
-            this.logger.log(`[AI] Running Extractor...`);
-            const extractionResult = await run(extractor, `Text: ${submissionText}`);
-            const extractionContent = this.extractContent(extractionResult);
+            const content = completion.choices[0]?.message?.content || '';
+            console.log(`[AI] Raw Response: ${content}`);
 
-            // Step 2: Grade the submission
-            this.logger.log(`[AI] Running Grader...`);
-            const gradingResult = await run(grader, `Submission: ${submissionText}\n\nExtraction Info: ${extractionContent}`);
-            const gradingContent = this.extractContent(gradingResult);
+            // Clean response (remove markdown if any)
+            const jsonStr = content.replace(/```json/g, '').replace(/```/g, '').trim();
+            const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
 
-            // Step 3: Final Review and JSON generation
-            this.logger.log(`[AI] Running Reviewer...`);
-            const finalQuery = `
-                Extraction Info: ${extractionContent}
-                Grading Info: ${gradingContent}
-                
-                Generate the final JSON based on these details.`;
-            const finalResult = await run(reviewer, finalQuery);
-            const finalContent = this.extractContent(finalResult);
-
-            this.logger.log(`[AI] Final Reviewer Output: ${finalContent}`);
-
-            // Improved JSON Parsing
-            const jsonMatch = finalContent.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
                 try {
                     const parsed = JSON.parse(jsonMatch[0]);
-                    // Validation
-                    if (parsed.score !== undefined) {
-                        this.logger.log(`[AI] Successfully parsed marksheet for ${parsed.studentName}`);
-                        return {
-                            studentName: parsed.studentName || 'Unknown',
-                            rollNumber: parsed.rollNumber || 'Unknown',
-                            score: Number(parsed.score) || 0,
-                            remarks: parsed.remarks || 'No remarks provided'
-                        };
-                    }
+                    console.log(`[AI] Successfully parsed result for ${parsed.studentName}`);
+                    return {
+                        studentName: parsed.studentName || 'Unknown',
+                        rollNumber: parsed.rollNumber || 'Unknown',
+                        score: Number(parsed.score) || 0,
+                        remarks: parsed.remarks || 'No remarks provided'
+                    };
                 } catch (e) {
-                    this.logger.error('JSON Parse Error in Reviewer response', e);
+                    console.error('[AI] JSON Parse Error:', e);
                 }
             }
 
-            // Fallback: If JSON parsing fails, try to extract fields manually or return error
-            this.logger.warn('Reviewer failed to provide valid JSON. Attempting manual field extraction...');
-
-            return {
-                studentName: extractionContent.match(/Name:\s*([^\n,]+)/i)?.[1]?.trim() || 'Unknown',
-                rollNumber: extractionContent.match(/Roll:\s*([^\n,]+)/i)?.[1]?.trim() || 'Unknown',
-                score: 0,
-                remarks: "AI error: The final reviewer did not provide a valid JSON report. Please re-run."
-            };
-
+            throw new Error('Could not parse AI response as JSON');
         } catch (error) {
-            this.logger.error('AI sequence failed', error);
+            console.error('[AI] Request failed:', error);
             throw error;
         }
     }
