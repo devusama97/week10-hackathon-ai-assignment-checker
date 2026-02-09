@@ -1,10 +1,12 @@
-import { Controller, Post, Param, UploadedFiles, UseInterceptors, Get, Res, Delete } from '@nestjs/common';
+import { Controller, Post, Param, UploadedFiles, UseInterceptors, Get, Res, Delete, UseGuards, Req } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { SubmissionService } from './submission.service';
 import type { Response } from 'express';
 import * as excel from 'exceljs';
 
 @Controller('submissions')
+@UseGuards(JwtAuthGuard)
 export class SubmissionController {
     constructor(private readonly submissionService: SubmissionService) { }
 
@@ -13,18 +15,19 @@ export class SubmissionController {
     async upload(
         @Param('assignmentId') assignmentId: string,
         @UploadedFiles() files: Express.Multer.File[],
+        @Req() req: any
     ) {
-        return this.submissionService.processSubmissions(assignmentId, files);
+        return this.submissionService.processSubmissions(assignmentId, files, req.user.userId);
     }
 
     @Get('assignment/:assignmentId')
-    async getByAssignment(@Param('assignmentId') assignmentId: string) {
-        return this.submissionService.findByAssignment(assignmentId);
+    async getByAssignment(@Param('assignmentId') assignmentId: string, @Req() req: any) {
+        return this.submissionService.findByAssignment(assignmentId, req.user.userId);
     }
 
     @Get('export/:assignmentId')
-    async export(@Param('assignmentId') assignmentId: string, @Res() res: Response) {
-        const submissions = await this.submissionService.findByAssignment(assignmentId);
+    async export(@Param('assignmentId') assignmentId: string, @Res() res: Response, @Req() req: any) {
+        const submissions = await this.submissionService.findByAssignment(assignmentId, req.user.userId);
 
         const workbook = new excel.Workbook();
         const worksheet = workbook.addWorksheet('Marks Sheet');
@@ -60,12 +63,12 @@ export class SubmissionController {
     }
 
     @Delete(':id')
-    async remove(@Param('id') id: string) {
-        return this.submissionService.delete(id);
+    async remove(@Param('id') id: string, @Req() req: any) {
+        return this.submissionService.delete(id, req.user.userId);
     }
 
     @Delete('assignment/:assignmentId')
-    async removeByAssignment(@Param('assignmentId') assignmentId: string) {
-        return this.submissionService.deleteAllByAssignment(assignmentId);
+    async removeByAssignment(@Param('assignmentId') assignmentId: string, @Req() req: any) {
+        return this.submissionService.deleteAllByAssignment(assignmentId, req.user.userId);
     }
 }

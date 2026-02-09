@@ -17,9 +17,9 @@ export class SubmissionService {
         private agentService: AgentService,
     ) { }
 
-    async processSubmissions(assignmentId: string, files: Express.Multer.File[]) {
-        const assignment = await this.assignmentService.findOne(assignmentId);
-        if (!assignment) throw new Error('Assignment not found');
+    async processSubmissions(assignmentId: string, files: Express.Multer.File[], userId: string) {
+        const assignment = await this.assignmentService.findOne(assignmentId, userId);
+        if (!assignment) throw new Error('Assignment not found or unauthorized');
 
         const results = [];
 
@@ -83,15 +83,26 @@ export class SubmissionService {
         return results;
     }
 
-    async findByAssignment(assignmentId: string) {
+    async findByAssignment(assignmentId: string, userId: string) {
+        const assignment = await this.assignmentService.findOne(assignmentId, userId);
+        if (!assignment) return [];
         return this.submissionModel.find({ assignmentId: new Types.ObjectId(assignmentId) }).exec();
     }
 
-    async delete(id: string) {
+    async delete(id: string, userId: string) {
+        const submission = await this.submissionModel.findById(id).exec();
+        if (!submission) return null;
+
+        const assignment = await this.assignmentService.findOne(submission.assignmentId.toString(), userId);
+        if (!assignment) throw new Error('Unauthorized');
+
         return this.submissionModel.findByIdAndDelete(id).exec();
     }
 
-    async deleteAllByAssignment(assignmentId: string) {
+    async deleteAllByAssignment(assignmentId: string, userId: string) {
+        const assignment = await this.assignmentService.findOne(assignmentId, userId);
+        if (!assignment) throw new Error('Unauthorized');
+
         return this.submissionModel.deleteMany({ assignmentId: new Types.ObjectId(assignmentId) }).exec();
     }
 }

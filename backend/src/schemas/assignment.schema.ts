@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 export type AssignmentDocument = Assignment & Document;
 
@@ -19,6 +19,9 @@ export class Assignment {
 
   @Prop({ enum: ['active', 'inactive'], default: 'active' })
   status: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  userId: Types.ObjectId;
 }
 
 export const AssignmentSchema = SchemaFactory.createForClass(Assignment);

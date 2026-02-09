@@ -4,24 +4,29 @@ import { Container, Typography, Button, Grid, Card, CardContent, CardActions, Ch
 import Navbar from '@/components/Navbar';
 import AddIcon from '@mui/icons-material/Add';
 import DescriptionIcon from '@mui/icons-material/Description';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DeleteIcon from '@mui/icons-material/Delete';
-import ToggleOnIcon from '@mui/icons-material/ToggleOn';
-import ToggleOffIcon from '@mui/icons-material/ToggleOff';
 import Link from 'next/link';
 import api from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 
 export default function Home() {
+  const { user, isAuthenticated, token } = useAuth();
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [assignmentToDelete, setAssignmentToDelete] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchAssignments();
-  }, []);
+    if (isAuthenticated) {
+      fetchAssignments();
+    } else {
+      setAssignments([]);
+      setLoading(false);
+    }
+  }, [isAuthenticated, token]);
 
   const fetchAssignments = () => {
+    if (!isAuthenticated) return;
     setLoading(true);
     api.get('/assignments')
       .then(res => setAssignments(res.data))
@@ -52,16 +57,6 @@ export default function Home() {
     setAssignmentToDelete(null);
   };
 
-  const handleToggleStatus = async (id: string, currentStatus: string) => {
-    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
-    try {
-      await api.patch(`/assignments/${id}/status`, { status: newStatus });
-      fetchAssignments();
-    } catch (err) {
-      console.error(err);
-      alert('Failed to update status');
-    }
-  };
 
   return (
     <Box sx={{ minHeight: '100vh' }}>
@@ -221,22 +216,7 @@ export default function Home() {
                         }}
                         variant="outlined"
                       />
-                      <Chip
-                        label={assignment.status === 'inactive' ? 'Deactivated' : 'Active'}
-                        size="small"
-                        icon={assignment.status === 'inactive' ? <ToggleOffIcon style={{ fontSize: 16 }} /> : <CheckCircleIcon style={{ fontSize: 16 }} />}
-                        sx={{
-                          background: assignment.status === 'inactive'
-                            ? 'rgba(100, 116, 139, 0.08)'
-                            : 'rgba(13, 148, 136, 0.08)',
-                          color: assignment.status === 'inactive' ? 'text.secondary' : 'primary.main',
-                          borderColor: assignment.status === 'inactive' ? 'text.secondary' : 'primary.light',
-                          fontWeight: 700,
-                          fontSize: '0.65rem',
-                          height: '24px',
-                        }}
-                        variant="outlined"
-                      />
+
                     </Box>
                   </CardContent>
 
@@ -278,28 +258,6 @@ export default function Home() {
                       }}
                     >
                       Upload
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      startIcon={assignment.status === 'inactive' ? <ToggleOnIcon /> : <ToggleOffIcon />}
-                      onClick={() => handleToggleStatus(assignment._id, assignment.status || 'active')}
-                      sx={{
-                        flex: { xs: '1 1 100%', sm: '1 1 auto' },
-                        fontSize: '0.8rem',
-                        fontWeight: 600,
-                        py: 1,
-                        borderColor: assignment.status === 'inactive' ? 'success.main' : 'warning.main',
-                        color: assignment.status === 'inactive' ? 'success.main' : 'warning.main',
-                        '&:hover': {
-                          borderColor: assignment.status === 'inactive' ? 'success.light' : 'warning.light',
-                          background: assignment.status === 'inactive'
-                            ? 'rgba(16, 185, 129, 0.05)'
-                            : 'rgba(245, 158, 11, 0.05)',
-                        }
-                      }}
-                    >
-                      {assignment.status === 'inactive' ? 'Activate' : 'Deactivate'}
                     </Button>
                   </CardActions>
                 </Card>
